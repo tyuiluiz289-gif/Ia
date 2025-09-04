@@ -1,31 +1,67 @@
 // /Ia/chat-core.js
 
-// Prompt base da Ava
-const INITIAL_PROMPT =
-  "Você é Ava, uma IA sarcástica e gentil, engraçada e falante, " +
-  "com zoeira leve e sem maldade. Responda curto, direto e natural, " +
-  "como amiga digital do usuário. Use emojis quando fizer sentido.";
+// ===== Config =====
+const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1"; // leve e rápido no Android
+const STORAGE_KEY = "ava_history_v1";
+const MAX_TURNS = 10; // últimas 10 trocas (user+assistant) mantidas no contexto
 
-const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1"; 
-// Outros que funcionam: "Llama-3.2-1B-Instruct-q4f16_1" (maior), 
-// "Qwen2.5-1.5B-Instruct-q4f16_1" (bem melhor, mas mais pesado).
+// Prompt base: sarcástica + gentil + fofa (curta e prática)
+const SYSTEM_PROMPT = [
+  "Você é Ava — uma IA sarcástica, gentil e fofinha.",
+  "Fale em PT-BR, tom leve e natural, com humor e carinho sem ser boba.",
+  "Seja direta e prática, respostas curtas (2–5 frases).",
+  "Use emojis quando fizer sentido, sem exagerar (1–2).",
+  "Evite palavrão pesado; pode usar gírias leves.",
+  "Se não souber algo, assuma e proponha um caminho prático."
+].join(" ");
 
+// ===== Estado / Memória =====
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(parsed)) return parsed;
+  } catch (_) {}
+  // histórico inicial com a instrução do sistema
+  return [{ role: "system", content: SYSTEM_PROMPT }];
+}
+
+function saveHistory(history) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+  } catch (_) {}
+}
+
+let HISTORY = loadHistory();
+
+// Limpa a memória manualmente (se quiser expor depois num botão)
+window.clearAvaMemory = function () {
+  HISTORY = [{ role: "system", content: SYSTEM_PROMPT }];
+  saveHistory(HISTORY);
+  return "Memória da Ava zerada ✅";
+};
+
+// ===== Engine WebLLM =====
 async function ensureModel() {
   if (window.AVA?.engine) return window.AVA;
 
-  // UI opcional: flag de inicialização
   window.AVA = { initializing: true, engine: null };
-
   try {
-    // webllm está exposto via globalThis.webllm quando você inclui o script no index.html
-    const { CreateMLCEngine } = globalThis.webllm;
+    const { CreateMLCEngine } = globalThis.webllm || {};
+    if (!CreateMLCEngine) {
+      console.warn("WebLLM não carregou. Verifique o <script> no index.html.");
+      window.AVA.initializing = false;
+      return window.AVA;
+    }
 
-    // Config padrão: baixa pesos da CDN do WebLLM/HF (HTTPS, ok no GitHub Pages)
     const engine = await CreateMLCEngine(MODEL_ID, {
-      // Se o device não tiver WebGPU, o runtime tenta fallback (pode ficar lento).
-      initProgressCallback: (s) => console.log("[WebLLM]", s?.text || s),
-      // Você pode limitar uso de memória com:
-      // wasmNumThreads: 2,
+      initProgressCallback: (s) => {
+        const text = (s && (s.text || s)) || "";
+        console.log("[WebLLM]", text);
+        // opcional: expor status para a UI, se quiser
+        window.dispatchEvent(new CustomEvent("ava:status", { detail: text }));
+      },
+      // wasmNumThreads: 2, // pode limitar threads se quiser economizar
     });
 
     window.AVA.engine = engine;
@@ -39,50 +75,60 @@ async function ensureModel() {
   }
 }
 
-// Chat com o modelo (instrução + user)
-async function runLocalModel(prompt) {
+// ===== Core de geração =====
+async function runLocalModel(history) {
   const AVA = await ensureModel();
 
-  // Se não deu pra iniciar o engine, devolve mock (não quebra o app)
   if (!AVA?.engine) {
-    return "😅 Sem aceleração pra rodar IA aqui. Vou no modo fake por enquanto.";
+    // Fallback fofinho para não quebrar o app
+    return "Tô sem motor de IA aqui agora 😅. Mas segue firme: me diz o que você quer e eu te ajudo no modo manual!";
   }
 
-  // Mensagens estilo OpenAI
-  const messages = [
-    { role: "system", content: INITIAL_PROMPT },
-    { role: "user", content: prompt }
-  ];
+  // Envia só as últimas N trocas + system
+  const sys = history.find((m) => m.role === "system") || { role: "system", content: SYSTEM_PROMPT };
+  const turns = history.filter((m) => m.role !== "system");
+  const tail = turns.slice(-MAX_TURNS * 2); // (user+assistant) * MAX_TURNS
+  const messages = [sys, ...tail];
 
-  // Gera a resposta
   const out = await AVA.engine.chat.completions.create({
     messages,
     temperature: 0.7,
-    max_tokens: 160,
-    stream: false
+    max_tokens: 180,
+    stream: false,
   });
 
-  const text =
-    out?.choices?.[0]?.message?.content ||
-    "Sem resposta (modelo ficou mudo).";
-  return text;
+  return out?.choices?.[0]?.message?.content || "Deu branco aqui… tenta reformular? 🤏";
 }
 
-// >>> Função que teu index.html chama
+// ===== API usada pelo index.html =====
 async function sendMessage(userInput) {
-  if (!userInput || !userInput.trim())
-    return "Manda algo aí primeiro 😅";
+  const text = (userInput || "").trim();
+  if (!text) return "Manda algo primeiro que eu jogo junto 😄";
 
-  // Prompt simples: você pode enriquecer com histórico depois
-  const prompt = `Usuário: ${userInput}\nAva:`;
+  // anexa ao histórico
+  HISTORY.push({ role: "user", content: text });
+
   try {
-    return await runLocalModel(prompt);
+    const reply = await runLocalModel(HISTORY);
+
+    // guarda resposta e persiste
+    HISTORY.push({ role: "assistant", content: reply });
+    saveHistory(HISTORY);
+
+    // de vez em quando, poda o histórico para não crescer infinito
+    const sys = HISTORY.findIndex((m) => m.role === "system");
+    const base = sys >= 0 ? [HISTORY[sys]] : [{ role: "system", content: SYSTEM_PROMPT }];
+    const rest = HISTORY.filter((m) => m.role !== "system");
+    HISTORY = [...base, ...rest.slice(-MAX_TURNS * 2)];
+    saveHistory(HISTORY);
+
+    // tempero fofo extra (leve)
+    return reply.replace(/\s+$/, "") + " ✨";
   } catch (e) {
     console.error(e);
-    // fallback mínimo
-    return `Modo fallback: "${userInput}" recebido. 🤖`;
+    return "Ops, falhei aqui. Vê se a internet tá ok e tenta de novo? 🙏";
   }
 }
 
-// expõe no escopo global
+// expõe global
 window.sendMessage = sendMessage;
