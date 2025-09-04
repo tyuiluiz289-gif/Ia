@@ -13,30 +13,65 @@
   <style>
     body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#0b1220; color:#fff; }
     h1 { margin: 0 0 12px 0; }
-    #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; overflow-y:auto; }
-    input { width: calc(100% - 120px); padding: 10px; border-radius: 10px; border: 0; margin-top: 12px; }
-    button { padding: 10px 14px; border-radius: 10px; border: 0; margin-left: 8px; }
-    p { line-height: 1.4; }
+    #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; max-height: 60vh; overflow-y:auto; }
+    .row { display:flex; gap:8px; margin-top:12px; }
+    input { flex:1; padding: 10px; border-radius: 10px; border: 0; }
+    button { padding: 10px 14px; border-radius: 10px; border: 0; cursor:pointer; }
+    p { line-height: 1.4; margin: 8px 0; }
   </style>
 </head>
 <body>
   <h1>AvaGPT</h1>
   <div id="chat-box"></div>
-  <input id="user-input" placeholder="Fala com a Ava..." />
-  <button onclick="handleSend()">Enviar</button>
 
+  <div class="row">
+    <input id="user-input" placeholder="Fala com a Ava..." autocomplete="off" />
+    <button id="send-btn">Enviar</button>
+  </div>
+
+  <!-- Núcleo do chat -->
   <script src="/Ia/chat-core.js"></script>
   <script>
-    function handleSend() {
-      const inputEl = document.getElementById("user-input");
-      const text = inputEl.value.trim();
-      if (!text) return;
-      const reply = sendMessage(text);
-      const box = document.getElementById("chat-box");
-      box.innerHTML += `<p><b>Você:</b> ${text}</p><p><b>Ava:</b> ${reply}</p>`;
-      inputEl.value = "";
+    const inputEl = document.getElementById("user-input");
+    const box = document.getElementById("chat-box");
+    const sendBtn = document.getElementById("send-btn");
+
+    function append(html) {
+      box.insertAdjacentHTML("beforeend", html);
       box.scrollTop = box.scrollHeight;
     }
+
+    async function handleSend() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+
+      // mensagem do usuário
+      append(`<p><b>Você:</b> ${text}</p>`);
+      inputEl.value = "";
+
+      // placeholder "digitando..."
+      const typingId = `ava-typing-${Date.now()}`;
+      append(`<p id="${typingId}"><b>Ava:</b> digitando...</p>`);
+
+      try {
+        if (typeof window.sendMessage !== "function") {
+          throw new Error("sendMessage não está definida. Verifica /Ia/chat-core.js");
+        }
+        const reply = await window.sendMessage(text);   // <<< espera a IA/servidor
+        const node = document.getElementById(typingId);
+        if (node) node.outerHTML = `<p><b>Ava:</b> ${reply}</p>`;
+      } catch (e) {
+        console.error(e);
+        const node = document.getElementById(typingId);
+        if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere a URL do servidor/CORS.</p>`;
+      }
+    }
+
+    // clique e Enter
+    sendBtn.addEventListener("click", handleSend);
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleSend();
+    });
   </script>
 
   <!-- Service Worker com escopo /Ia/ -->
