@@ -1,143 +1,161 @@
-// /Ia/chat-core.js
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>AvaGPT - Offline</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0b1220" />
 
-// ===== Config =====
-const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"; // leve e garantido
-// Se quiser mais esperto (e teu cel aguenta):
-// const MODEL_ID = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+  <!-- Manifest + ícone (PASTA: /la/) -->
+  <link rel="manifest" href="/la/manifest.json" />
+  <link rel="icon" href="/la/icon-192.png" />
 
-const STORAGE_KEY = "ava_history_v1";
-const MAX_TURNS = 10; // mantém últimas 10 trocas (user+assistant)
+  <!-- WebLLM (runtime no navegador) -->
+  <script src="https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.min.js"></script>
 
-// ===== Persona =====
-const SYSTEM_PROMPT = [
-  "Você é Ava — uma IA sarcástica, gentil e fofinha.",
-  "Fale em PT-BR, tom leve e natural, com humor e carinho sem ser boba.",
-  "Seja direta e prática, respostas curtas (2–5 frases).",
-  "Use emojis quando fizer sentido, sem exagerar (1–2).",
-  "Evite palavrão pesado; pode usar gírias leves.",
-  "Se não souber algo, assuma e proponha um caminho prático."
-].join(" ");
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#0b1220; color:#fff; }
+    h1 { margin: 0 0 12px 0; }
+    #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; max-height: 60vh; overflow-y:auto; }
+    .row { display:flex; gap:8px; margin-top:12px; }
+    input { flex:1; padding:10px; border-radius:10px; border:0; background:#0f172a; color:#fff; }
+    button { padding:10px 14px; border-radius:10px; border:0; cursor:pointer; background:#1f2937; color:#fff; }
+    p { line-height:1.45; margin:8px 0; }
 
-// ===== Memória =====
-function loadHistory() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (Array.isArray(parsed)) return parsed;
-  } catch (_) {}
-  return [{ role: "system", content: SYSTEM_PROMPT }];
-}
-function saveHistory(history) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); } catch (_) {}
-}
-let HISTORY = loadHistory();
+    /* Status + barra */
+    #status { display:none; margin:10px 0; background:#0f172a; border:1px solid #1f2937; border-radius:8px; padding:8px 10px; }
+    #status-top { display:flex; justify-content:space-between; gap:8px; font-size:14px; opacity:.95; }
+    #status-bar-wrap { height:8px; background:#0d1324; border:1px solid #1f2937; border-radius:999px; overflow:hidden; margin-top:6px; }
+    #status-bar { height:100%; width:0%; background:#22c55e; transition:width .2s ease; }
+  </style>
+</head>
+<body>
+  <h1>AvaGPT</h1>
 
-window.clearAvaMemory = function () {
-  HISTORY = [{ role: "system", content: SYSTEM_PROMPT }];
-  saveHistory(HISTORY);
-  return "Memória da Ava zerada ✅";
-};
+  <!-- Aviso + barra de progresso -->
+  <div id="status">
+    <div id="status-top">
+      <span id="status-text">Preparando a IA…</span>
+      <span id="status-pct"></span>
+    </div>
+    <div id="status-bar-wrap">
+      <div id="status-bar"></div>
+    </div>
+  </div>
 
-// ===== Engine WebLLM =====
-async function ensureModel() {
-  if (window.AVA?.engine) return window.AVA;
+  <div id="chat-box"></div>
 
-  window.AVA = { initializing: true, engine: null };
-  try {
-    const { CreateMLCEngine } = globalThis.webllm || {};
-    if (!CreateMLCEngine) {
-      console.warn("WebLLM não carregou. Verifique o <script> no index.html.");
-      window.AVA.initializing = false;
-      return window.AVA;
+  <div class="row">
+    <input id="user-input" placeholder="Fala com a Ava..." autocomplete="off" />
+    <button id="send-btn">Enviar</button>
+  </div>
+
+  <!-- Núcleo do chat (PASTA: /la/) -->
+  <script src="/la/chat-core.js"></script>
+  <script>
+    const box = document.getElementById("chat-box");
+    const inputEl = document.getElementById("user-input");
+    const sendBtn = document.getElementById("send-btn");
+
+    // status widgets
+    const statusWrap = document.getElementById("status");
+    const statusText = document.getElementById("status-text");
+    const statusPct  = document.getElementById("status-pct");
+    const statusBar  = document.getElementById("status-bar");
+
+    let busy = false;
+
+    function showStatus(msg, pct){
+      statusWrap.style.display = 'block';
+      if (msg) statusText.textContent = msg;
+      if (typeof pct === "number") {
+        const clamped = Math.max(0, Math.min(100, pct));
+        statusPct.textContent = clamped + "%";
+        statusBar.style.width = clamped + "%";
+      } else {
+        statusPct.textContent = "";
+      }
+    }
+    function hideStatus(){
+      statusWrap.style.display = 'none';
+      statusPct.textContent = "";
+      statusBar.style.width = "0%";
+    }
+    function append(html){
+      box.insertAdjacentHTML("beforeend", html);
+      box.scrollTop = box.scrollHeight;
     }
 
-    // Emite eventos de progresso COM % para a barra no index.html
-    const engine = await CreateMLCEngine(MODEL_ID, {
-      initProgressCallback: (s) => {
-        const text = (s && (s.text || s)) || "";
-        const pct = (s && typeof s.progress === "number")
-          ? Math.round(s.progress * 100)
-          : null;
-        console.log("[WebLLM]", text, pct != null ? `${pct}%` : "");
-        window.dispatchEvent(new CustomEvent("ava:status", {
-          detail: { text, pct }
-        }));
-      },
-      // wasmNumThreads: 2, // opcional se quiser economizar
+    // Progresso vindo do chat-core (initProgressCallback emite {text, pct})
+    window.addEventListener("ava:status", (e) => {
+      const d = e?.detail || {};
+      if (typeof d === "string") {
+        showStatus(d);
+      } else {
+        showStatus(d.text || "Carregando modelo…", d.pct);
+        if (d.pct === 100) setTimeout(hideStatus, 800);
+      }
     });
 
-    window.AVA.engine = engine;
-    window.AVA.initializing = false;
+    // Pré-aquecer o modelo assim que abrir o app (começa download sem esperar mensagem)
+    window.addEventListener("load", () => {
+      if (typeof window.prewarmModel === "function") {
+        showStatus("Inicializando IA…");
+        window.prewarmModel().catch(console.error);
+      }
+    });
 
-    // Sinaliza "pronto"
-    window.dispatchEvent(new CustomEvent("ava:status", {
-      detail: { text: "Modelo pronto! 🚀", pct: 100 }
-    }));
+    // Alerta inicial se o runtime ainda não foi injetado
+    if (!(globalThis.webllm && globalThis.webllm.CreateMLCEngine)) {
+      showStatus("WebLLM não carregou ainda. A primeira inicialização pode demorar um pouco na rede móvel.");
+    }
 
-    return window.AVA;
-  } catch (err) {
-    console.error("Falha ao inicializar WebLLM:", err);
-    window.AVA.initializing = false;
-    window.AVA.engine = null;
+    async function handleSend() {
+      if (busy) return;
+      const text = inputEl.value.trim();
+      if (!text) return;
 
-    window.dispatchEvent(new CustomEvent("ava:status", {
-      detail: { text: "Falha ao carregar a IA. Verifique conexão/armazenamento.", pct: null }
-    }));
+      append(`<p><b>Você:</b> ${text}</p>`);
+      inputEl.value = "";
+      inputEl.focus();
 
-    return window.AVA;
-  }
-}
+      const typingId = `ava-typing-${Date.now()}`;
+      append(`<p id="${typingId}"><b>Ava:</b> digitando...</p>`);
+      busy = true; sendBtn.disabled = true;
 
-// ===== Geração =====
-async function runLocalModel(history) {
-  const AVA = await ensureModel();
+      try {
+        if (typeof window.sendMessage !== "function") throw new Error("sendMessage não está definida. Verifica /la/chat-core.js");
+        showStatus("Carregando IA… pode demorar na primeira vez.");
+        const reply = await window.sendMessage(text);
+        const node = document.getElementById(typingId);
+        if (node) node.outerHTML = `<p><b>Ava:</b> ${reply}</p>`;
+      } catch (e) {
+        console.error(e);
+        const node = document.getElementById(typingId);
+        if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere o WebLLM e o /la/chat-core.js.</p>`;
+      } finally {
+        hideStatus();
+        busy = false; sendBtn.disabled = false;
+      }
+    }
 
-  if (!AVA?.engine) {
-    // Fallback fofinho para não quebrar
-    return "Tô sem motor de IA aqui agora 😅. Mas segue firme: me diz o que você quer e eu te ajudo no modo manual!";
-  }
+    sendBtn.addEventListener("click", handleSend);
+    inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") handleSend(); });
+  </script>
 
-  // Usa system + últimas N trocas
-  const sys = history.find(m => m.role === "system") || { role: "system", content: SYSTEM_PROMPT };
-  const turns = history.filter(m => m.role !== "system");
-  const tail = turns.slice(-MAX_TURNS * 2);
-  const messages = [sys, ...tail];
-
-  const out = await AVA.engine.chat.completions.create({
-    messages,
-    temperature: 0.7,
-    max_tokens: 180,
-    stream: false
-  });
-
-  return out?.choices?.[0]?.message?.content || "Deu branco aqui… tenta reformular? 🤏";
-}
-
-// ===== API p/ index.html =====
-async function sendMessage(userInput) {
-  const text = (userInput || "").trim();
-  if (!text) return "Manda algo primeiro que eu jogo junto 😄";
-
-  HISTORY.push({ role: "user", content: text });
-
-  try {
-    const reply = await runLocalModel(HISTORY);
-
-    HISTORY.push({ role: "assistant", content: reply });
-    saveHistory(HISTORY);
-
-    // Poda o histórico
-    const sysIdx = HISTORY.findIndex(m => m.role === "system");
-    const base = sysIdx >= 0 ? [HISTORY[sysIdx]] : [{ role: "system", content: SYSTEM_PROMPT }];
-    const rest = HISTORY.filter(m => m.role !== "system");
-    HISTORY = [...base, ...rest.slice(-MAX_TURNS * 2)];
-    saveHistory(HISTORY);
-
-    return reply.replace(/\s+$/, "") + " ✨";
-  } catch (e) {
-    console.error(e);
-    return "Ops, falhei aqui. Vê se a internet tá ok e tenta de novo? 🙏";
-  }
-}
-
+  <!-- Service Worker (PASTA: /la/) -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/la/sw.js', { scope: '/la/' })
+          .then(r => console.log('SW registrado:', r.scope))
+          .catch(e => console.error('SW erro:', e));
+      });
+    }
+  </script>
+</body>
+</html>
+// expõe globais
 window.sendMessage = sendMessage;
+window.prewarmModel = ensureModel;
