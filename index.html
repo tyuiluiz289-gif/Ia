@@ -5,26 +5,30 @@
   <title>AvaGPT - Offline</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#0b1220" />
+
+  <!-- Manifest + ícone -->
   <link rel="manifest" href="/Ia/manifest.json" />
   <link rel="icon" href="/Ia/icon-192.png" />
-  <!-- WebLLM -->
+
+  <!-- WebLLM (runtime no navegador) -->
   <script src="https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.min.js"></script>
 
   <style>
+    :root { color-scheme: dark; }
     body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#0b1220; color:#fff; }
     h1 { margin: 0 0 12px 0; }
     #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; max-height: 60vh; overflow-y:auto; }
     .row { display:flex; gap:8px; margin-top:12px; }
-    input { flex:1; padding: 10px; border-radius: 10px; border: 0; }
-    button { padding: 10px 14px; border-radius: 10px; border: 0; cursor:pointer; }
-    p { line-height: 1.4; margin: 8px 0; }
-    #status { font-size: 14px; opacity: .85; background: #0f172a; border: 1px solid #1f2937; padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; display:none; }
+    input { flex:1; padding: 10px; border-radius: 10px; border: 0; background:#0f172a; color:#fff; }
+    button { padding: 10px 14px; border-radius: 10px; border: 0; cursor:pointer; background:#1f2937; color:#fff; }
+    p { line-height: 1.45; margin: 8px 0; }
+    #status { font-size: 14px; opacity:.95; background:#0f172a; border:1px solid #1f2937; padding:8px 10px; border-radius:8px; margin: 10px 0; display:none; }
   </style>
 </head>
 <body>
   <h1>AvaGPT</h1>
 
-  <div id="status">carregando IA… primeira resposta pode demorar no primeiro uso.</div>
+  <div id="status">Preparando a IA…</div>
   <div id="chat-box"></div>
 
   <div class="row">
@@ -35,28 +39,47 @@
   <!-- Núcleo do chat -->
   <script src="/Ia/chat-core.js"></script>
   <script>
-    const inputEl = document.getElementById("user-input");
     const box = document.getElementById("chat-box");
+    const inputEl = document.getElementById("user-input");
     const sendBtn = document.getElementById("send-btn");
     const statusEl = document.getElementById("status");
+    let busy = false;
 
     function showStatus(msg){ statusEl.textContent = msg; statusEl.style.display = 'block'; }
     function hideStatus(){ statusEl.style.display = 'none'; }
     function append(html){ box.insertAdjacentHTML("beforeend", html); box.scrollTop = box.scrollHeight; }
 
+    // mostra progresso vindo do chat-core (CreateMLCEngine.initProgressCallback)
+    window.addEventListener("ava:status", (e) => {
+      if (e?.detail) showStatus(String(e.detail));
+    });
+
+    // alerta se o runtime WebLLM não veio
+    if (!(globalThis.webllm && globalThis.webllm.CreateMLCEngine)) {
+      showStatus("WebLLM não carregou ainda. A primeira inicialização pode demorar um pouco na rede móvel.");
+    }
+
     async function handleSend() {
+      if (busy) return;
       const text = inputEl.value.trim();
       if (!text) return;
 
+      // mensagem do usuário
       append(`<p><b>Você:</b> ${text}</p>`);
       inputEl.value = "";
+      inputEl.focus();
 
+      // placeholder "digitando..."
       const typingId = `ava-typing-${Date.now()}`;
       append(`<p id="${typingId}"><b>Ava:</b> digitando...</p>`);
+      busy = true;
+      sendBtn.disabled = true;
 
       try {
-        if (typeof window.sendMessage !== "function") throw new Error("sendMessage não está definida.");
-        showStatus('carregando IA…');
+        if (typeof window.sendMessage !== "function") {
+          throw new Error("sendMessage não está definida. Verifica /Ia/chat-core.js");
+        }
+        showStatus("Carregando IA… pode demorar na primeira vez.");
         const reply = await window.sendMessage(text);
         const node = document.getElementById(typingId);
         if (node) node.outerHTML = `<p><b>Ava:</b> ${reply}</p>`;
@@ -66,11 +89,13 @@
         if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere o WebLLM e o /Ia/chat-core.js.</p>`;
       } finally {
         hideStatus();
+        busy = false;
+        sendBtn.disabled = false;
       }
     }
 
     sendBtn.addEventListener("click", handleSend);
-    inputEl.addEventListener("keydown", (e)=>{ if (e.key === "Enter") handleSend(); });
+    inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") handleSend(); });
   </script>
 
   <!-- Service Worker com escopo /Ia/ -->
