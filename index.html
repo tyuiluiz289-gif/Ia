@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <link rel="manifest" href="/Ia/manifest.json">
   <meta charset="UTF-8" />
   <title>AvaGPT - Offline</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
@@ -14,7 +13,7 @@
   <style>
     body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#0b1220; color:#fff; }
     h1 { margin: 0 0 12px 0; }
-    #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; }
+    #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; overflow-y:auto; }
     input { width: calc(100% - 120px); padding: 10px; border-radius: 10px; border: 0; margin-top: 12px; }
     button { padding: 10px 14px; border-radius: 10px; border: 0; margin-left: 8px; }
     p { line-height: 1.4; }
@@ -26,16 +25,16 @@
   <input id="user-input" placeholder="Fala com a Ava..." />
   <button onclick="handleSend()">Enviar</button>
 
-  <!-- Se o arquivo está na raiz de /Ia/, usa caminho relativo curto -->
   <script src="/Ia/chat-core.js"></script>
   <script>
     function handleSend() {
-      const input = document.getElementById("user-input").value.trim();
-      if (!input) return;
-      const response = sendMessage(input);
+      const inputEl = document.getElementById("user-input");
+      const text = inputEl.value.trim();
+      if (!text) return;
+      const reply = sendMessage(text);
       const box = document.getElementById("chat-box");
-      box.innerHTML += `<p><b>Você:</b> ${input}</p><p><b>Ava:</b> ${response}</p>`;
-      document.getElementById("user-input").value = "";
+      box.innerHTML += `<p><b>Você:</b> ${text}</p><p><b>Ava:</b> ${reply}</p>`;
+      inputEl.value = "";
       box.scrollTop = box.scrollHeight;
     }
   </script>
