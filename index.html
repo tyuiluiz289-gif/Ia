@@ -19,16 +19,31 @@
     h1 { margin: 0 0 12px 0; }
     #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; max-height: 60vh; overflow-y:auto; }
     .row { display:flex; gap:8px; margin-top:12px; }
-    input { flex:1; padding: 10px; border-radius: 10px; border: 0; background:#0f172a; color:#fff; }
-    button { padding: 10px 14px; border-radius: 10px; border: 0; cursor:pointer; background:#1f2937; color:#fff; }
-    p { line-height: 1.45; margin: 8px 0; }
-    #status { font-size: 14px; opacity:.95; background:#0f172a; border:1px solid #1f2937; padding:8px 10px; border-radius:8px; margin: 10px 0; display:none; }
+    input { flex:1; padding:10px; border-radius:10px; border:0; background:#0f172a; color:#fff; }
+    button { padding:10px 14px; border-radius:10px; border:0; cursor:pointer; background:#1f2937; color:#fff; }
+    p { line-height:1.45; margin:8px 0; }
+
+    /* Status + barra */
+    #status { display:none; margin:10px 0; background:#0f172a; border:1px solid #1f2937; border-radius:8px; padding:8px 10px; }
+    #status-top { display:flex; justify-content:space-between; gap:8px; font-size:14px; opacity:.95; }
+    #status-bar-wrap { height:8px; background:#0d1324; border:1px solid #1f2937; border-radius:999px; overflow:hidden; margin-top:6px; }
+    #status-bar { height:100%; width:0%; background:#22c55e; transition:width .2s ease; }
   </style>
 </head>
 <body>
   <h1>AvaGPT</h1>
 
-  <div id="status">Preparando a IA…</div>
+  <!-- Aviso + barra de progresso -->
+  <div id="status">
+    <div id="status-top">
+      <span id="status-text">Preparando a IA…</span>
+      <span id="status-pct"></span>
+    </div>
+    <div id="status-bar-wrap">
+      <div id="status-bar"></div>
+    </div>
+  </div>
+
   <div id="chat-box"></div>
 
   <div class="row">
@@ -42,19 +57,50 @@
     const box = document.getElementById("chat-box");
     const inputEl = document.getElementById("user-input");
     const sendBtn = document.getElementById("send-btn");
-    const statusEl = document.getElementById("status");
+
+    // status widgets
+    const statusWrap = document.getElementById("status");
+    const statusText = document.getElementById("status-text");
+    const statusPct  = document.getElementById("status-pct");
+    const statusBar  = document.getElementById("status-bar");
+
     let busy = false;
 
-    function showStatus(msg){ statusEl.textContent = msg; statusEl.style.display = 'block'; }
-    function hideStatus(){ statusEl.style.display = 'none'; }
-    function append(html){ box.insertAdjacentHTML("beforeend", html); box.scrollTop = box.scrollHeight; }
+    function showStatus(msg, pct){
+      statusWrap.style.display = 'block';
+      if (msg) statusText.textContent = msg;
+      if (typeof pct === "number") {
+        const clamped = Math.max(0, Math.min(100, pct));
+        statusPct.textContent = clamped + "%";
+        statusBar.style.width = clamped + "%";
+      } else {
+        statusPct.textContent = "";
+      }
+    }
+    function hideStatus(){
+      statusWrap.style.display = 'none';
+      statusPct.textContent = "";
+      statusBar.style.width = "0%";
+    }
+    function append(html){
+      box.insertAdjacentHTML("beforeend", html);
+      box.scrollTop = box.scrollHeight;
+    }
 
-    // mostra progresso vindo do chat-core (CreateMLCEngine.initProgressCallback)
+    // Progresso vindo do chat-core (initProgressCallback)
     window.addEventListener("ava:status", (e) => {
-      if (e?.detail) showStatus(String(e.detail));
+      const d = e?.detail || {};
+      // detail pode ser string (compat antigo) ou objeto { text, pct }
+      if (typeof d === "string") {
+        showStatus(d);
+      } else {
+        showStatus(d.text || "Carregando modelo…", d.pct);
+        // Se atingir 100%, dá um pequeno delay e esconde
+        if (d.pct === 100) setTimeout(hideStatus, 800);
+      }
     });
 
-    // alerta se o runtime WebLLM não veio
+    // Alerta inicial se o runtime ainda não foi injetado
     if (!(globalThis.webllm && globalThis.webllm.CreateMLCEngine)) {
       showStatus("WebLLM não carregou ainda. A primeira inicialização pode demorar um pouco na rede móvel.");
     }
@@ -64,21 +110,19 @@
       const text = inputEl.value.trim();
       if (!text) return;
 
-      // mensagem do usuário
       append(`<p><b>Você:</b> ${text}</p>`);
       inputEl.value = "";
       inputEl.focus();
 
-      // placeholder "digitando..."
       const typingId = `ava-typing-${Date.now()}`;
       append(`<p id="${typingId}"><b>Ava:</b> digitando...</p>`);
-      busy = true;
-      sendBtn.disabled = true;
+      busy = true; sendBtn.disabled = true;
 
       try {
         if (typeof window.sendMessage !== "function") {
           throw new Error("sendMessage não está definida. Verifica /Ia/chat-core.js");
         }
+        // Mostra status enquanto a primeira resposta não vem
         showStatus("Carregando IA… pode demorar na primeira vez.");
         const reply = await window.sendMessage(text);
         const node = document.getElementById(typingId);
@@ -89,8 +133,7 @@
         if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere o WebLLM e o /Ia/chat-core.js.</p>`;
       } finally {
         hideStatus();
-        busy = false;
-        sendBtn.disabled = false;
+        busy = false; sendBtn.disabled = false;
       }
     }
 
