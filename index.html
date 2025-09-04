@@ -1,47 +1,54 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-    <title>AvaGPT - Offline</title>
-    <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <title>AvaGPT - Offline</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0b1220" />
 
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0b1220" />
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" href="./icons/icon-192.png" />
-    
+  <!-- Manifest e ícone com prefixo da subpasta /Ia/ -->
+  <link rel="manifest" href="/Ia/manifest.json" />
+  <link rel="icon" href="/Ia/icon-192.png" />
 
-    <style>
-      body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#0b1220; color:#fff; }
-      h1 { margin: 0 0 12px 0; }
-      #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; }
-      input { width: calc(100% - 120px); padding: 10px; border-radius: 10px; border: 0; margin-top: 12px; }
-      button { padding: 10px 14px; border-radius: 10px; border: 0; margin-left: 8px; }
-      p { line-height: 1.4; }
-    </style>
-    
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#0b1220; color:#fff; }
+    h1 { margin: 0 0 12px 0; }
+    #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; }
+    input { width: calc(100% - 120px); padding: 10px; border-radius: 10px; border: 0; margin-top: 12px; }
+    button { padding: 10px 14px; border-radius: 10px; border: 0; margin-left: 8px; }
+    p { line-height: 1.4; }
+  </style>
 </head>
 <body>
-    <h1>AvaGPT</h1>
-    <div id="chat-box"></div>
-    <input id="user-input" placeholder="Fala com a Ava..." />
-    <button onclick="handleSend()">Enviar</button>
-    <script src="../js/chat-core.js"></script>
-    <script>
-        function handleSend() {
-            const input = document.getElementById("user-input").value;
-            const response = sendMessage(input);
-            document.getElementById("chat-box").innerHTML += "<p><b>Você:</b> " + input + "</p><p><b>Ava:</b> " + response + "</p>";
-        }
-    </script>
+  <h1>AvaGPT</h1>
+  <div id="chat-box"></div>
+  <input id="user-input" placeholder="Fala com a Ava..." />
+  <button onclick="handleSend()">Enviar</button>
 
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(console.error);
-        });
-      }
-    </script>
-    
+  <!-- Se o arquivo está na raiz de /Ia/, usa caminho relativo curto -->
+  <script src="/Ia/chat-core.js"></script>
+  <script>
+    function handleSend() {
+      const input = document.getElementById("user-input").value.trim();
+      if (!input) return;
+      const response = sendMessage(input);
+      const box = document.getElementById("chat-box");
+      box.innerHTML += `<p><b>Você:</b> ${input}</p><p><b>Ava:</b> ${response}</p>`;
+      document.getElementById("user-input").value = "";
+      box.scrollTop = box.scrollHeight;
+    }
+  </script>
+
+  <!-- Service Worker com escopo /Ia/ -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('/Ia/sw.js', { scope: '/Ia/' })
+          .then(r => console.log('SW registrado:', r.scope))
+          .catch(e => console.error('SW erro:', e));
+      });
+    }
+  </script>
 </body>
 </html>
