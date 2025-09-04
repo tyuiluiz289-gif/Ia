@@ -10,6 +10,9 @@
   <link rel="manifest" href="/Ia/manifest.json" />
   <link rel="icon" href="/Ia/icon-192.png" />
 
+  <!-- WebLLM (runtime no navegador) — necessário para a opção 2 -->
+  <script src="https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.min.js"></script>
+
   <style>
     body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#0b1220; color:#fff; }
     h1 { margin: 0 0 12px 0; }
@@ -18,10 +21,13 @@
     input { flex:1; padding: 10px; border-radius: 10px; border: 0; }
     button { padding: 10px 14px; border-radius: 10px; border: 0; cursor:pointer; }
     p { line-height: 1.4; margin: 8px 0; }
+    #status { font-size: 14px; opacity: .85; background: #0f172a; border: 1px solid #1f2937; padding: 8px 10px; border-radius: 8px; margin-bottom: 10px; display:none; }
   </style>
 </head>
 <body>
   <h1>AvaGPT</h1>
+
+  <div id="status">carregando IA… primeira resposta pode demorar no primeiro uso.</div>
   <div id="chat-box"></div>
 
   <div class="row">
@@ -35,6 +41,74 @@
     const inputEl = document.getElementById("user-input");
     const box = document.getElementById("chat-box");
     const sendBtn = document.getElementById("send-btn");
+    const statusEl = document.getElementById("status");
+
+    function showStatus(msg) {
+      statusEl.textContent = msg;
+      statusEl.style.display = 'block';
+    }
+    function hideStatus() {
+      statusEl.style.display = 'none';
+    }
+
+    function append(html) {
+      box.insertAdjacentHTML("beforeend", html);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function handleSend() {
+      const text = inputEl.value.trim();
+      if (!text) return;
+
+      // mensagem do usuário
+      append(`<p><b>Você:</b> ${text}</p>`);
+      inputEl.value = "";
+
+      // placeholder "digitando..."
+      const typingId = `ava-typing-${Date.now()}`;
+      append(`<p id="${typingId}"><b>Ava:</b> digitando...</p>`);
+
+      try {
+        if (typeof window.sendMessage !== "function") {
+          throw new Error("sendMessage não está definida. Verifica /Ia/chat-core.js");
+        }
+
+        // primeira chamada pode precisar baixar modelo → mostra status
+        showStatus('carregando IA…');
+
+        const reply = await window.sendMessage(text);
+
+        const node = document.getElementById(typingId);
+        if (node) node.outerHTML = `<p><b>Ava:</b> ${reply}</p>`;
+
+        hideStatus(); // recebeu a primeira resposta → some status
+      } catch (e) {
+        console.error(e);
+        const node = document.getElementById(typingId);
+        if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere o runtime e o /Ia/chat-core.js.</p>`;
+      }
+    }
+
+    // clique e Enter
+    sendBtn.addEventListener("click", handleSend);
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") handleSend();
+    });
+  </script>
+
+  <!-- Service Worker com escopo /Ia/ -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('/Ia/sw.js', { scope: '/Ia/' })
+          .then(r => console.log('SW registrado:', r.scope))
+          .catch(e => console.error('SW erro:', e));
+      });
+    }
+  </script>
+</body>
+</html>    const sendBtn = document.getElementById("send-btn");
 
     function append(html) {
       box.insertAdjacentHTML("beforeend", html);
