@@ -1,5 +1,5 @@
 // ===== Config =====
-const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"; // leve
+const MODEL_ID = "Phi-3-mini-4k-instruct-q4f16_1-MLC"; // pequeno, rápido e estável
 const STORAGE_KEY = "ava_history_v1";
 const MAX_TURNS = 10;
 
@@ -105,7 +105,6 @@ async function runLocalModel(history) {
     // Fallback: API clássica (algumas builds expõem engine.chat)
     if (typeof AVA.engine?.chat === "function") {
       const out = await AVA.engine.chat({ messages, temperature: 0.7, max_tokens: 180 });
-      // diferentes builds retornam formatos distintos; tenta extrair texto:
       if (typeof out === "string") return out;
       if (out?.choices?.[0]?.message?.content) return out.choices[0].message.content;
       if (out?.output_text) return out.output_text;
@@ -116,7 +115,7 @@ async function runLocalModel(history) {
   } catch (e) {
     console.error("Erro durante geração:", e);
     status("Erro na geração: " + (e?.message || e));
-    throw e; // deixa o index cair no catch e trocar a linha “digitando...”
+    throw e;
   }
 }
 
@@ -142,10 +141,17 @@ async function sendMessage(userInput) {
 
     return reply.replace(/\s+$/, "") + " ✨";
   } catch (e) {
-    // já logamos/mostramos status acima
     return "Ops, falhei aqui. Vê a faixa de status (mostrei o motivo) e tenta de novo. 🙏";
   }
 }
 
 window.sendMessage = sendMessage;
 window.prewarmModel = ensureModel;
+
+// ===== (Opcional) listar modelos prebuilt no console p/ debug =====
+window.listAvailableModels = function () {
+  const cfg = globalThis.webllm?.prebuiltAppConfig;
+  const list = cfg?.model_list?.map(m => m.model_id) || [];
+  console.log("Modelos prebuilt do WebLLM:", list);
+  status("Listei os modelos no console.");
+};
