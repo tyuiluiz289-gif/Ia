@@ -22,40 +22,57 @@
     #status { font-size: 14px; opacity:.95; background:#0f172a; border:1px solid #1f2937; padding:8px 10px; border-radius:8px; margin: 10px 0; display:none; }
   </style>
 
-  <!-- Loader com fallback de CDN para o WebLLM -->
+  <!-- Loader: tenta local -> unpkg -> jsDelivr, com timeout -->
   <script>
     (function () {
-      const CDNS = [
+      const SOURCES = [
+        "./web-llm.min.js",
         "https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.min.js",
         "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.65/dist/index.min.js"
       ];
+      const TIMEOUT_MS = 12000; // 12s por fonte
 
       function emitStatus(msg) {
         window.dispatchEvent(new CustomEvent("ava:status", { detail: msg }));
       }
 
-      function loadWebLLM(i = 0) {
-        if (i >= CDNS.length) {
-          emitStatus("Falha ao iniciar a IA: WebLLM não está disponível (script não carregou).");
+      function tryLoad(i = 0) {
+        if (i >= SOURCES.length) {
+          emitStatus("Falha ao iniciar a IA: WebLLM não está disponível (tentei local e CDNs).");
           return;
         }
+        const url = SOURCES[i];
         const s = document.createElement("script");
-        s.src = CDNS[i];
+        let done = false;
+        const timer = setTimeout(() => {
+          if (done) return;
+          done = true;
+          s.remove();
+          emitStatus("Fonte lenta/bloqueada, tentando alternativa…");
+          tryLoad(i + 1);
+        }, TIMEOUT_MS);
+
+        s.src = url;
         s.async = true;
         s.crossOrigin = "anonymous";
-        s.onload = () => emitStatus("WebLLM carregado, iniciando…");
+        s.onload = () => {
+          if (done) return;
+          done = true; clearTimeout(timer);
+          emitStatus("WebLLM carregado, iniciando…");
+        };
         s.onerror = () => {
-          // tenta o próximo CDN
-          emitStatus("CDN falhou, tentando espelho…");
-          loadWebLLM(i + 1);
+          if (done) return;
+          done = true; clearTimeout(timer);
+          emitStatus("Não deu nessa fonte, tentando outra…");
+          tryLoad(i + 1);
         };
         document.head.appendChild(s);
       }
 
-      // Se ainda não existe, tenta carregar agora
+      // dispara o carregamento se ainda não existe
       if (!("webllm" in globalThis)) {
-        emitStatus("Baixando runtime da IA…");
-        loadWebLLM(0);
+        emitStatus("Carregando runtime da IA… primeira inicialização pode demorar.");
+        tryLoad(0);
       }
     })();
   </script>
@@ -84,14 +101,11 @@
     function hideStatus(){ statusEl.style.display = 'none'; }
     function append(html){ box.insertAdjacentHTML("beforeend", html); box.scrollTop = box.scrollHeight; }
 
-    // Mensagens de status (loader + chat-core)
     window.addEventListener("ava:status", (e) => {
       const d = e?.detail;
-      if (!d) return;
-      showStatus(typeof d === "string" ? d : String(d));
+      if (d) showStatus(typeof d === "string" ? d : String(d));
     });
 
-    // Se o runtime ainda não foi injetado, avisa
     if (!(globalThis.webllm && globalThis.webllm.CreateMLCEngine)) {
       showStatus("Carregando runtime da IA… primeira inicialização pode demorar.");
     }
@@ -110,7 +124,8 @@
       busy = true; sendBtn.disabled = true;
 
       try {
-        if (typeof window.sendMessage !== "function") throw new Error("sendMessage não está definida. Verifica ./chat-core.js");
+        if (typeof window.sendMessage !== "function")
+          throw new Error("sendMessage não está definida. Verifica ./chat-core.js");
         showStatus("Carregando IA… pode demorar na primeira vez.");
         const reply = await window.sendMessage(text);
         const node = document.getElementById(typingId);
