@@ -1,7 +1,8 @@
 // ===== Config =====
 const MODEL_CANDIDATES = [
-  "Phi-3-mini-4k-instruct-q4f16_1-MLC",          // 1º: melhor qualidade/levezinha
-  "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"            // 2º: fallback rápido
+  "Phi-3.5-mini-instruct-q4f16_1-MLC", // 1º: compatível e esperto
+  "Phi-2-q4f16_1-MLC",                 // 2º: fallback super leve
+  "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"  // 3º: só se os dois acima falharem
 ];
 
 const STORAGE_KEY = "ava_history_v1";
@@ -44,6 +45,20 @@ function pickCreateFns(ns) {
   return { CreateMLCEngine, CreateWebWorkerMLCEngine };
 }
 
+function waitFor(fn, ms = 8000, step = 100) {
+  const t0 = Date.now();
+  return new Promise((res, rej) => {
+    (function loop() {
+      try {
+        const v = typeof fn === "function" ? fn() : fn;
+        if (v) return res(v);
+      } catch {}
+      if (Date.now() - t0 >= ms) return rej(new Error("timeout"));
+      setTimeout(loop, step);
+    })();
+  });
+}
+
 // ===== Engine WebLLM =====
 async function ensureModel() {
   if (window.AVA?.engine) return window.AVA;
@@ -59,7 +74,8 @@ async function ensureModel() {
       throw new Error("CreateMLCEngine ausente no módulo webllm");
     }
 
-    const create = CreateMLCEngine || CreateWebWorkerMLCEngine;
+    // Prioriza WebWorker (mais estável em Android)
+    const create = CreateWebWorkerMLCEngine || CreateMLCEngine;
 
     let lastErr = null;
     for (const MODEL_ID of MODEL_CANDIDATES) {
@@ -67,12 +83,11 @@ async function ensureModel() {
         status(`Baixando/abrindo modelo: ${MODEL_ID}…`, 1);
         const engine = await create(MODEL_ID, {
           initProgressCallback: (s) => {
-            // s pode ser string ou objeto { text, progress }
             const text = typeof s === "string" ? s : (s?.text || "");
             const pct  = typeof s?.progress === "number" ? Math.round(s.progress * 100) : null;
             status(text || "Preparando modelo…", pct);
           },
-          // wasmNumThreads: 2, // opcional
+          // wasmNumThreads: 2, // pode habilitar se quiser economizar bateria
         });
 
         window.AVA.engine = engine;
@@ -95,20 +110,6 @@ async function ensureModel() {
     status("Falha ao carregar a IA: " + (err?.message || String(err)));
     return window.AVA;
   }
-}
-
-function waitFor(fn, ms = 8000, step = 100) {
-  const t0 = Date.now();
-  return new Promise((res, rej) => {
-    (function loop() {
-      try {
-        const v = typeof fn === "function" ? fn() : fn;
-        if (v) return res(v);
-      } catch {}
-      if (Date.now() - t0 >= ms) return rej(new Error("timeout"));
-      setTimeout(loop, step);
-    })();
-  });
 }
 
 // ===== Geração =====
