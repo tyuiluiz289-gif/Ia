@@ -2,23 +2,15 @@
   "name": "AvaGPT (Offline)",
   "short_name": "AvaGPT",
   "description": "IA offline, zuera e gentil – roda no navegador e como PWA.",
-  "id": "/",
-  "start_url": "/web/index.html",
-  "scope": "/web/",
+  "id": "/Ia/",
+  "start_url": "/Ia/index.html",
+  "scope": "/Ia/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0b1220",
   "theme_color": "#0b1220",
   "icons": [
-    {
-      "src": "icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "/Ia/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/Ia/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
