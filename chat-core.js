@@ -1,7 +1,10 @@
 // /Ia/chat-core.js
 
 // ===== Config =====
-const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1"; // leve e rápido no Android
+// Use SEMPRE o sufixo -MLC nos modelos do WebLLM
+const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"; // leve e garantido
+// const MODEL_ID = "Qwen2.5-1.5B-Instruct-q4f16_1-MLC"; // mais esperto (teu cel aguenta)
+
 const STORAGE_KEY = "ava_history_v1";
 const MAX_TURNS = 10; // últimas 10 trocas (user+assistant) mantidas no contexto
 
@@ -22,7 +25,6 @@ function loadHistory() {
     const parsed = raw ? JSON.parse(raw) : null;
     if (Array.isArray(parsed)) return parsed;
   } catch (_) {}
-  // histórico inicial com a instrução do sistema
   return [{ role: "system", content: SYSTEM_PROMPT }];
 }
 
@@ -58,10 +60,10 @@ async function ensureModel() {
       initProgressCallback: (s) => {
         const text = (s && (s.text || s)) || "";
         console.log("[WebLLM]", text);
-        // opcional: expor status para a UI, se quiser
+        // opcional: expor status para a UI
         window.dispatchEvent(new CustomEvent("ava:status", { detail: text }));
       },
-      // wasmNumThreads: 2, // pode limitar threads se quiser economizar
+      // wasmNumThreads: 2, // opcional: limitar threads
     });
 
     window.AVA.engine = engine;
@@ -84,7 +86,6 @@ async function runLocalModel(history) {
     return "Tô sem motor de IA aqui agora 😅. Mas segue firme: me diz o que você quer e eu te ajudo no modo manual!";
   }
 
-  // Envia só as últimas N trocas + system
   const sys = history.find((m) => m.role === "system") || { role: "system", content: SYSTEM_PROMPT };
   const turns = history.filter((m) => m.role !== "system");
   const tail = turns.slice(-MAX_TURNS * 2); // (user+assistant) * MAX_TURNS
@@ -115,7 +116,7 @@ async function sendMessage(userInput) {
     HISTORY.push({ role: "assistant", content: reply });
     saveHistory(HISTORY);
 
-    // de vez em quando, poda o histórico para não crescer infinito
+    // poda o histórico para não crescer infinito
     const sys = HISTORY.findIndex((m) => m.role === "system");
     const base = sys >= 0 ? [HISTORY[sys]] : [{ role: "system", content: SYSTEM_PROMPT }];
     const rest = HISTORY.filter((m) => m.role !== "system");
