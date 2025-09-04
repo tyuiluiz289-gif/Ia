@@ -1,174 +1,87 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <title>AvaGPT - Offline</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <meta name="theme-color" content="#0b1220" />
+<!-- Loader: tenta ESM (esm.run) -> UMD (jsDelivr/unpkg) -> arquivo local -->
+<script>
+  (function () {
+    const ESM_SOURCES = [
+      "https://esm.run/@mlc-ai/web-llm@0.2.65"
+    ];
+    // UMD expõe window.webllm
+    const UMD_SOURCES = [
+      "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.65/dist/index.js",
+      "https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.js"
+    ];
+    const UMD_LOCAL = "./web-llm.js"; // opcional (se você enviar o arquivo junto)
+    const TIMEOUT_MS = 12000;
 
-  <!-- Manifest + ícone (MESMA PASTA) -->
-  <link rel="manifest" href="./manifest.json" />
-  <link rel="icon" href="./icon-192.png" />
+    const emit = (msg) => window.dispatchEvent(new CustomEvent("ava:status", { detail: msg }));
 
-  <style>
-    :root { color-scheme: dark; }
-    body { font-family: system-ui, Arial, sans-serif; max-width: 720px; margin: 0 auto; padding: 16px; background:#0b1220; color:#fff; }
-    h1 { margin: 0 0 12px 0; }
-    #chat-box { background:#111827; border-radius: 12px; padding: 12px; min-height: 240px; max-height: 60vh; overflow-y:auto; }
-    .row { display:flex; gap:8px; margin-top:12px; }
-    input { flex:1; padding: 10px; border-radius: 10px; border: 0; background:#0f172a; color:#fff; }
-    button { padding: 10px 14px; border-radius: 10px; border: 0; cursor:pointer; background:#1f2937; color:#fff; }
-    p { line-height: 1.45; margin: 8px 0; }
-    #status { font-size: 14px; opacity:.95; background:#0f172a; border:1px solid #1f2937; padding:8px 10px; border-radius:8px; margin: 10px 0; display:none; }
-  </style>
-
-  <!-- Loader: tenta ESM (oficial) -> arquivo local (UMD), com timeout -->
-  <script>
-    (function () {
-      const ESM_SOURCES = [
-        "https://esm.run/@mlc-ai/web-llm"
-      ];
-      const UMD_LOCAL = "./web-llm.js"; // opcional: se você salvar um bundle que exponha window.webllm
-      const TIMEOUT_MS = 12000;
-
-      const emit = (msg) => window.dispatchEvent(new CustomEvent("ava:status", { detail: msg }));
-
-      function importWithTimeout(url, ms) {
-        return Promise.race([
-          import(/* @vite-ignore */ url),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))
-        ]);
-      }
-
-      function waitForGlobal(name, ms) {
-        const start = Date.now();
-        return new Promise((resolve, reject) => {
-          (function check() {
-            if (globalThis[name]) return resolve(globalThis[name]);
-            if (Date.now() - start > ms) return reject(new Error("timeout"));
-            setTimeout(check, 100);
-          })();
-        });
-      }
-
-      async function loadWebLLM() {
-        if ("webllm" in globalThis) return true;
-
-        emit("Carregando runtime da IA… primeira inicialização pode demorar.");
-        // 1) tenta ESM oficial
-        for (const url of ESM_SOURCES) {
-          try {
-            const mod = await importWithTimeout(url, TIMEOUT_MS);
-            globalThis.webllm = mod;  // expõe como global para o chat-core
-            emit("WebLLM carregado via ESM. Iniciando…");
-            return true;
-          } catch (e) {
-            console.warn("[WebLLM] falha no ESM", url, e?.message || e);
-            emit("Fonte ESM falhou/está lenta, tentando alternativa…");
-          }
-        }
-
-        // 2) tenta um bundle UMD local que defina window.webllm
-        try {
-          await new Promise((resolve, reject) => {
-            const s = document.createElement("script");
-            const timer = setTimeout(() => { s.remove(); reject(new Error("timeout")); }, TIMEOUT_MS);
-            s.src = UMD_LOCAL;
-            s.async = true;
-            s.onload = () => { clearTimeout(timer); resolve(); };
-            s.onerror = () => { clearTimeout(timer); reject(new Error("erro ao carregar script local")); };
-            document.head.appendChild(s);
-          });
-          await waitForGlobal("webllm", 4000);
-          emit("WebLLM carregado via arquivo local. Iniciando…");
-          return true;
-        } catch (e) {
-          console.warn("[WebLLM] falha no local UMD", e?.message || e);
-        }
-
-        emit("Falha ao iniciar a IA: não consegui carregar o WebLLM (ESM e local).");
-        return false;
-      }
-
-      loadWebLLM();
-    })();
-  </script>
-</head>
-<body>
-  <h1>AvaGPT</h1>
-
-  <div id="status">Preparando a IA…</div>
-  <div id="chat-box"></div>
-
-  <div class="row">
-    <input id="user-input" placeholder="Fala com a Ava..." autocomplete="off" />
-    <button id="send-btn">Enviar</button>
-  </div>
-
-  <!-- Núcleo do chat (MESMA PASTA) -->
-  <script src="./chat-core.js"></script>
-  <script>
-    const box = document.getElementById("chat-box");
-    const inputEl = document.getElementById("user-input");
-    const sendBtn = document.getElementById("send-btn");
-    const statusEl = document.getElementById("status");
-    let busy = false;
-
-    function showStatus(msg){ statusEl.textContent = msg; statusEl.style.display = 'block'; }
-    function hideStatus(){ statusEl.style.display = 'none'; }
-    function append(html){ box.insertAdjacentHTML("beforeend", html); box.scrollTop = box.scrollHeight; }
-
-    window.addEventListener("ava:status", (e) => {
-      const d = e?.detail;
-      if (d) showStatus(typeof d === "string" ? d : String(d));
-    });
-
-    if (!(globalThis.webllm && (globalThis.webllm.CreateMLCEngine || globalThis.webllm.CreateWebWorkerMLCEngine))) {
-      showStatus("Carregando runtime da IA… primeira inicialização pode demorar.");
+    function importWithTimeout(url, ms) {
+      return Promise.race([
+        import(/* @vite-ignore */ (url + (url.includes("?") ? "&" : "?") + "v=2")),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))
+      ]);
     }
 
-    async function handleSend() {
-      if (busy) return;
-      const text = inputEl.value.trim();
-      if (!text) return;
-
-      append(`<p><b>Você:</b> ${text}</p>`);
-      inputEl.value = "";
-      inputEl.focus();
-
-      const typingId = `ava-typing-${Date.now()}`;
-      append(`<p id="${typingId}"><b>Ava:</b> digitando...</p>`);
-      busy = true; sendBtn.disabled = true;
-
-      try {
-        if (typeof window.sendMessage !== "function")
-          throw new Error("sendMessage não está definida. Verifica ./chat-core.js");
-        showStatus("Carregando IA… pode demorar na primeira vez.");
-        const reply = await window.sendMessage(text);
-        const node = document.getElementById(typingId);
-        if (node) node.outerHTML = `<p><b>Ava:</b> ${reply}</p>`;
-      } catch (e) {
-        console.error(e);
-        const node = document.getElementById(typingId);
-        if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere o WebLLM e o ./chat-core.js.</p>`;
-      } finally {
-        hideStatus(); busy = false; sendBtn.disabled = false;
-      }
-    }
-
-    sendBtn.addEventListener("click", handleSend);
-    inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") handleSend(); });
-  </script>
-
-  <!-- Service Worker (MESMA PASTA) -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js', { scope: './' })
-          .then(r => console.log('SW registrado:', r.scope))
-          .catch(e => console.error('SW erro:', e));
+    function loadScript(url, ms) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        const t = setTimeout(() => { s.remove(); reject(new Error("timeout")); }, ms);
+        s.src = url + (url.includes("?") ? "&" : "?") + "v=2";
+        s.async = true;
+        s.crossOrigin = "anonymous";
+        s.onload = () => { clearTimeout(t); resolve(); };
+        s.onerror = () => { clearTimeout(t); reject(new Error("erro script "+url)); };
+        document.head.appendChild(s);
       });
     }
-  </script>
-</body>
-</html>
+
+    async function ensureWebLLM() {
+      if (globalThis.webllm && (webllm.CreateMLCEngine || webllm.CreateWebWorkerMLCEngine)) return true;
+
+      emit("Carregando runtime da IA… primeira inicialização pode demorar.");
+
+      // 1) Tenta ESM
+      for (const url of ESM_SOURCES) {
+        try {
+          const mod = await importWithTimeout(url, TIMEOUT_MS);
+          globalThis.webllm = mod;
+          if (webllm.CreateMLCEngine || webllm.CreateWebWorkerMLCEngine) {
+            emit("WebLLM carregado via ESM.");
+            return true;
+          }
+        } catch (e) {
+          console.warn("[WebLLM/ESM] falhou:", url, e?.message || e);
+          emit("ESM falhou/lento, tentando UMD…");
+        }
+      }
+
+      // 2) Tenta UMD (CDNs)
+      for (const url of UMD_SOURCES) {
+        try {
+          await loadScript(url, TIMEOUT_MS);
+          if (globalThis.webllm && (webllm.CreateMLCEngine || webllm.CreateWebWorkerMLCEngine)) {
+            emit("WebLLM carregado via UMD.");
+            return true;
+          }
+        } catch (e) {
+          console.warn("[WebLLM/UMD] falhou:", url, e?.message || e);
+        }
+      }
+
+      // 3) Último recurso: arquivo local
+      try {
+        await loadScript(UMD_LOCAL, TIMEOUT_MS);
+        if (globalThis.webllm && (webllm.CreateMLCEngine || webllm.CreateWebWorkerMLCEngine)) {
+          emit("WebLLM carregado via arquivo local.");
+          return true;
+        }
+      } catch (e) {
+        console.warn("[WebLLM/local] falhou:", e?.message || e);
+      }
+
+      emit("Falha ao iniciar a IA: não consegui carregar o WebLLM (ESM/UMD/local).");
+      return false;
+    }
+
+    ensureWebLLM();
+  })();
+</script>
