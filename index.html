@@ -49,15 +49,31 @@
     function hideStatus(){ statusEl.style.display = 'none'; }
     function append(html){ box.insertAdjacentHTML("beforeend", html); box.scrollTop = box.scrollHeight; }
 
-    // progresso do WebLLM vindo do chat-core
+    // Progresso/erros vindos do chat-core (emitido por initProgressCallback e ensureModel)
     window.addEventListener("ava:status", (e) => {
       const d = e?.detail;
       if (!d) return;
-      const text = typeof d === "string" ? d : (d.text || "");
-      showStatus(text);
+      if (typeof d === "string") {
+        showStatus(d);
+      } else {
+        const txt = d.text || "Carregando modelo…";
+        const pct = (typeof d.pct === "number") ? ` (${d.pct}%)` : "";
+        showStatus(txt + pct);
+      }
     });
 
-    // aviso inicial
+    // Pré-aquecer o modelo ao abrir a página (começa o download sem esperar a 1ª mensagem)
+    window.addEventListener("load", () => {
+      if (typeof window.prewarmModel === "function") {
+        showStatus("Inicializando IA…");
+        window.prewarmModel().catch(err => {
+          console.error(err);
+          showStatus("Falha ao iniciar a IA: " + (err?.message || err));
+        });
+      }
+    });
+
+    // Aviso se o runtime ainda não foi injetado
     if (!(globalThis.webllm && globalThis.webllm.CreateMLCEngine)) {
       showStatus("WebLLM não carregou ainda. A primeira inicialização pode demorar um pouco na rede móvel.");
     }
