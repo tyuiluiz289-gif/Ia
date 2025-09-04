@@ -6,12 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#0b1220" />
 
-  <!-- Manifest + ícone (ARQUIVOS NA MESMA PASTA DO INDEX) -->
+  <!-- Manifest + ícone (MESMA PASTA) -->
   <link rel="manifest" href="./manifest.json" />
   <link rel="icon" href="./icon-192.png" />
-
-  <!-- WebLLM (runtime no navegador) -->
-  <script src="https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.min.js"></script>
 
   <style>
     :root { color-scheme: dark; }
@@ -24,6 +21,44 @@
     p { line-height: 1.45; margin: 8px 0; }
     #status { font-size: 14px; opacity:.95; background:#0f172a; border:1px solid #1f2937; padding:8px 10px; border-radius:8px; margin: 10px 0; display:none; }
   </style>
+
+  <!-- Loader com fallback de CDN para o WebLLM -->
+  <script>
+    (function () {
+      const CDNS = [
+        "https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.min.js",
+        "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.65/dist/index.min.js"
+      ];
+
+      function emitStatus(msg) {
+        window.dispatchEvent(new CustomEvent("ava:status", { detail: msg }));
+      }
+
+      function loadWebLLM(i = 0) {
+        if (i >= CDNS.length) {
+          emitStatus("Falha ao iniciar a IA: WebLLM não está disponível (script não carregou).");
+          return;
+        }
+        const s = document.createElement("script");
+        s.src = CDNS[i];
+        s.async = true;
+        s.crossOrigin = "anonymous";
+        s.onload = () => emitStatus("WebLLM carregado, iniciando…");
+        s.onerror = () => {
+          // tenta o próximo CDN
+          emitStatus("CDN falhou, tentando espelho…");
+          loadWebLLM(i + 1);
+        };
+        document.head.appendChild(s);
+      }
+
+      // Se ainda não existe, tenta carregar agora
+      if (!("webllm" in globalThis)) {
+        emitStatus("Baixando runtime da IA…");
+        loadWebLLM(0);
+      }
+    })();
+  </script>
 </head>
 <body>
   <h1>AvaGPT</h1>
@@ -36,7 +71,7 @@
     <button id="send-btn">Enviar</button>
   </div>
 
-  <!-- Núcleo do chat (ARQUIVO NA MESMA PASTA) -->
+  <!-- Núcleo do chat (MESMA PASTA) -->
   <script src="./chat-core.js"></script>
   <script>
     const box = document.getElementById("chat-box");
@@ -49,33 +84,16 @@
     function hideStatus(){ statusEl.style.display = 'none'; }
     function append(html){ box.insertAdjacentHTML("beforeend", html); box.scrollTop = box.scrollHeight; }
 
-    // Progresso/erros vindos do chat-core (emitido por initProgressCallback e ensureModel)
+    // Mensagens de status (loader + chat-core)
     window.addEventListener("ava:status", (e) => {
       const d = e?.detail;
       if (!d) return;
-      if (typeof d === "string") {
-        showStatus(d);
-      } else {
-        const txt = d.text || "Carregando modelo…";
-        const pct = (typeof d.pct === "number") ? ` (${d.pct}%)` : "";
-        showStatus(txt + pct);
-      }
+      showStatus(typeof d === "string" ? d : String(d));
     });
 
-    // Pré-aquecer o modelo ao abrir a página (começa o download sem esperar a 1ª mensagem)
-    window.addEventListener("load", () => {
-      if (typeof window.prewarmModel === "function") {
-        showStatus("Inicializando IA…");
-        window.prewarmModel().catch(err => {
-          console.error(err);
-          showStatus("Falha ao iniciar a IA: " + (err?.message || err));
-        });
-      }
-    });
-
-    // Aviso se o runtime ainda não foi injetado
+    // Se o runtime ainda não foi injetado, avisa
     if (!(globalThis.webllm && globalThis.webllm.CreateMLCEngine)) {
-      showStatus("WebLLM não carregou ainda. A primeira inicialização pode demorar um pouco na rede móvel.");
+      showStatus("Carregando runtime da IA… primeira inicialização pode demorar.");
     }
 
     async function handleSend() {
@@ -110,7 +128,7 @@
     inputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") handleSend(); });
   </script>
 
-  <!-- Service Worker (ARQUIVO NA MESMA PASTA) -->
+  <!-- Service Worker (MESMA PASTA) -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
