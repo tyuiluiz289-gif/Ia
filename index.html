@@ -5,12 +5,9 @@
   <title>AvaGPT - Offline</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#0b1220" />
-
-  <!-- Manifest e ícone com prefixo da subpasta /Ia/ -->
   <link rel="manifest" href="/Ia/manifest.json" />
   <link rel="icon" href="/Ia/icon-192.png" />
-
-  <!-- WebLLM (runtime no navegador) — necessário para a opção 2 -->
+  <!-- WebLLM -->
   <script src="https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.min.js"></script>
 
   <style>
@@ -43,117 +40,44 @@
     const sendBtn = document.getElementById("send-btn");
     const statusEl = document.getElementById("status");
 
-    function showStatus(msg) {
-      statusEl.textContent = msg;
-      statusEl.style.display = 'block';
-    }
-    function hideStatus() {
-      statusEl.style.display = 'none';
-    }
-
-    function append(html) {
-      box.insertAdjacentHTML("beforeend", html);
-      box.scrollTop = box.scrollHeight;
-    }
+    function showStatus(msg){ statusEl.textContent = msg; statusEl.style.display = 'block'; }
+    function hideStatus(){ statusEl.style.display = 'none'; }
+    function append(html){ box.insertAdjacentHTML("beforeend", html); box.scrollTop = box.scrollHeight; }
 
     async function handleSend() {
       const text = inputEl.value.trim();
       if (!text) return;
 
-      // mensagem do usuário
       append(`<p><b>Você:</b> ${text}</p>`);
       inputEl.value = "";
 
-      // placeholder "digitando..."
       const typingId = `ava-typing-${Date.now()}`;
       append(`<p id="${typingId}"><b>Ava:</b> digitando...</p>`);
 
       try {
-        if (typeof window.sendMessage !== "function") {
-          throw new Error("sendMessage não está definida. Verifica /Ia/chat-core.js");
-        }
-
-        // primeira chamada pode precisar baixar modelo → mostra status
+        if (typeof window.sendMessage !== "function") throw new Error("sendMessage não está definida.");
         showStatus('carregando IA…');
-
         const reply = await window.sendMessage(text);
-
         const node = document.getElementById(typingId);
         if (node) node.outerHTML = `<p><b>Ava:</b> ${reply}</p>`;
-
-        hideStatus(); // recebeu a primeira resposta → some status
       } catch (e) {
         console.error(e);
         const node = document.getElementById(typingId);
-        if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere o runtime e o /Ia/chat-core.js.</p>`;
+        if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere o WebLLM e o /Ia/chat-core.js.</p>`;
+      } finally {
+        hideStatus();
       }
     }
 
-    // clique e Enter
     sendBtn.addEventListener("click", handleSend);
-    inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") handleSend();
-    });
+    inputEl.addEventListener("keydown", (e)=>{ if (e.key === "Enter") handleSend(); });
   </script>
 
   <!-- Service Worker com escopo /Ia/ -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/Ia/sw.js', { scope: '/Ia/' })
-          .then(r => console.log('SW registrado:', r.scope))
-          .catch(e => console.error('SW erro:', e));
-      });
-    }
-  </script>
-</body>
-</html>    const sendBtn = document.getElementById("send-btn");
-
-    function append(html) {
-      box.insertAdjacentHTML("beforeend", html);
-      box.scrollTop = box.scrollHeight;
-    }
-
-    async function handleSend() {
-      const text = inputEl.value.trim();
-      if (!text) return;
-
-      // mensagem do usuário
-      append(`<p><b>Você:</b> ${text}</p>`);
-      inputEl.value = "";
-
-      // placeholder "digitando..."
-      const typingId = `ava-typing-${Date.now()}`;
-      append(`<p id="${typingId}"><b>Ava:</b> digitando...</p>`);
-
-      try {
-        if (typeof window.sendMessage !== "function") {
-          throw new Error("sendMessage não está definida. Verifica /Ia/chat-core.js");
-        }
-        const reply = await window.sendMessage(text);   // <<< espera a IA/servidor
-        const node = document.getElementById(typingId);
-        if (node) node.outerHTML = `<p><b>Ava:</b> ${reply}</p>`;
-      } catch (e) {
-        console.error(e);
-        const node = document.getElementById(typingId);
-        if (node) node.outerHTML = `<p><b>Ava:</b> erro ao responder. Confere a URL do servidor/CORS.</p>`;
-      }
-    }
-
-    // clique e Enter
-    sendBtn.addEventListener("click", handleSend);
-    inputEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") handleSend();
-    });
-  </script>
-
-  <!-- Service Worker com escopo /Ia/ -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/Ia/sw.js', { scope: '/Ia/' })
+        navigator.serviceWorker.register('/Ia/sw.js', { scope: '/Ia/' })
           .then(r => console.log('SW registrado:', r.scope))
           .catch(e => console.error('SW erro:', e));
       });
