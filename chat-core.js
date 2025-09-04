@@ -1,8 +1,8 @@
 // ===== Config =====
 const MODEL_CANDIDATES = [
-  "Phi-3.5-mini-instruct-q4f16_1-MLC", // 1º: compatível e esperto
-  "Phi-2-q4f16_1-MLC",                 // 2º: fallback super leve
-  "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"  // 3º: só se os dois acima falharem
+  "Phi-3-mini-4k-instruct-q4f16_1-MLC",   // 1º: mais estável/qualidade boa
+  "Phi-2-q4f16_1-MLC",                    // 2º: fallback médio
+  "Qwen2.5-0.5B-Instruct-q4f16_1-MLC"     // 3º: fallback leve
 ];
 
 const STORAGE_KEY = "ava_history_v1";
@@ -31,18 +31,81 @@ function saveHistory(history) {
 }
 let HISTORY = loadHistory();
 
-// ===== Helpers de status (mandam msg pro index) =====
+window.clearAvaMemory = function () {
+  HISTORY = [{ role: "system", content: SYSTEM_PROMPT }];
+  saveHistory(HISTORY);
+  return "Memória da Ava zerada ✅";
+};
+
+// ===== Helpers de status =====
 function status(msg, pct = null) {
   window.dispatchEvent(new CustomEvent("ava:status", { detail: { text: msg, pct }}));
 }
 
-// ===== Resolver exports do WebLLM (ESM/UMD) =====
+// ===== Resolver exports do WebLLM =====
 function pickCreateFns(ns) {
   if (!ns) return {};
   const mod = ns.default && Object.keys(ns).length === 1 ? ns.default : ns;
   const CreateMLCEngine = mod.CreateMLCEngine || mod.createMLCEngine || mod.MLCEngine || null;
   const CreateWebWorkerMLCEngine = mod.CreateWebWorkerMLCEngine || mod.createWebWorkerMLCEngine || null;
   return { CreateMLCEngine, CreateWebWorkerMLCEngine };
+}
+
+// ===== Engine WebLLM =====
+async function ensureModel() {
+  if (window.AVA?.engine) return window.AVA;
+  window.AVA = { initializing: true, engine: null, modelId: null };
+
+  try {
+    const wl = await waitFor(() => globalThis.webllm, 12000);
+    const { CreateMLCEngine, CreateWebWorkerMLCEngine } = pickCreateFns(wl);
+    if (!CreateMLCEngine && !CreateWebWorkerMLCEngine) {
+      throw new Error("CreateMLCEngine ausente no módulo webllm");
+    }
+    const create = CreateMLCEngine || CreateWebWorkerMLCEngine;
+
+    let lastErr = null;
+    for (const MODEL_ID of MODEL_CANDIDATES) {
+      try {
+        status(`Baixando/abrindo modelo: ${MODEL_ID}…`, 1);
+
+        const opts = {
+          initProgressCallback: (s) => {
+            const text = typeof s === "string" ? s : (s?.text || "");
+            const pct  = typeof s?.progress === "number" ? Math.round(s.progress * 100) : null;
+            status(text || "Preparando modelo…", pct);
+          },
+        };
+
+        let engine;
+        try {
+          // alguns builds precisam de objeto { modelId }
+          engine = await create({ modelId: MODEL_ID, ...opts });
+        } catch {
+          // fallback com string simples
+          engine = await create(MODEL_ID, opts);
+        }
+
+        window.AVA.engine = engine;
+        window.AVA.modelId = MODEL_ID;
+        window.AVA.initializing = false;
+        status(`Modelo ${MODEL_ID} pronto! 🚀`, 100);
+        return window.AVA;
+      } catch (e) {
+        console.warn("[WebLLM] falha em", MODEL_ID, e);
+        lastErr = e;
+        status(`Falhou em ${MODEL_ID}. Tentando próximo…`);
+      }
+    }
+
+    throw lastErr || new Error("Falha ao inicializar qualquer modelo");
+  } catch (err) {
+    console.error("Falha ao inicializar WebLLM:", err);
+    window.AVA.initializing = false;
+    window.AVA.engine = null;
+    status("Falha ao carregar a IA: " + (err?.message || String(err)));
+    return window.AVA;
+  }
 }
 
 function waitFor(fn, ms = 8000, step = 100) {
@@ -59,59 +122,6 @@ function waitFor(fn, ms = 8000, step = 100) {
   });
 }
 
-// ===== Engine WebLLM =====
-async function ensureModel() {
-  if (window.AVA?.engine) return window.AVA;
-  window.AVA = { initializing: true, engine: null, modelId: null };
-
-  try {
-    // Espera o loader colocar "webllm" no global
-    const wl = await waitFor(() => globalThis.webllm, 12000);
-    const { CreateMLCEngine, CreateWebWorkerMLCEngine } = pickCreateFns(wl);
-
-    if (!CreateMLCEngine && !CreateWebWorkerMLCEngine) {
-      status("WebLLM carregou, mas não expôs CreateMLCEngine. Veja o console.");
-      throw new Error("CreateMLCEngine ausente no módulo webllm");
-    }
-
-    // Prioriza WebWorker (mais estável em Android)
-    const create = CreateWebWorkerMLCEngine || CreateMLCEngine;
-
-    let lastErr = null;
-    for (const MODEL_ID of MODEL_CANDIDATES) {
-      try {
-        status(`Baixando/abrindo modelo: ${MODEL_ID}…`, 1);
-        const engine = await create(MODEL_ID, {
-          initProgressCallback: (s) => {
-            const text = typeof s === "string" ? s : (s?.text || "");
-            const pct  = typeof s?.progress === "number" ? Math.round(s.progress * 100) : null;
-            status(text || "Preparando modelo…", pct);
-          },
-          // wasmNumThreads: 2, // pode habilitar se quiser economizar bateria
-        });
-
-        window.AVA.engine = engine;
-        window.AVA.modelId = MODEL_ID;
-        window.AVA.initializing = false;
-        status(`Modelo ${MODEL_ID} pronto! 🚀`, 100);
-        return window.AVA;
-      } catch (e) {
-        console.warn("[WebLLM] falha ao abrir", MODEL_ID, e);
-        lastErr = e;
-        status(`Falhou em ${MODEL_ID}. Tentando próximo…`);
-      }
-    }
-
-    throw lastErr || new Error("Falha ao inicializar qualquer modelo");
-  } catch (err) {
-    console.error("Falha ao inicializar WebLLM:", err);
-    window.AVA.initializing = false;
-    window.AVA.engine = null;
-    status("Falha ao carregar a IA: " + (err?.message || String(err)));
-    return window.AVA;
-  }
-}
-
 // ===== Geração =====
 async function runLocalModel(history) {
   const AVA = await ensureModel();
@@ -124,7 +134,6 @@ async function runLocalModel(history) {
   const messages = [sys, ...turns.slice(-MAX_TURNS * 2)];
 
   try {
-    // 1) Preferência: API OpenAI-compat
     const openaiCreate = AVA.engine?.chat?.completions?.create;
     if (typeof openaiCreate === "function") {
       const out = await openaiCreate.call(AVA.engine.chat.completions, {
@@ -136,7 +145,6 @@ async function runLocalModel(history) {
       return out?.choices?.[0]?.message?.content || "Deu branco aqui… tenta reformular? 🤏";
     }
 
-    // 2) Fallback: API clássica
     if (typeof AVA.engine?.chat === "function") {
       const out = await AVA.engine.chat({ messages, temperature: 0.7, max_tokens: 180 });
       if (typeof out === "string") return out;
@@ -145,7 +153,7 @@ async function runLocalModel(history) {
       return "Respondi mas não entendi o formato do retorno 😅";
     }
 
-    throw new Error("Nenhuma API de chat encontrada no engine (OpenAI ou clássica).");
+    throw new Error("Nenhuma API de chat encontrada no engine.");
   } catch (e) {
     console.error("Erro durante geração:", e);
     status("Erro na geração: " + (e?.message || e));
@@ -153,7 +161,7 @@ async function runLocalModel(history) {
   }
 }
 
-// ===== API exposta p/ index.html =====
+// ===== API exposta =====
 async function sendMessage(userInput) {
   const text = (userInput || "").trim();
   if (!text) return "Manda algo primeiro que eu jogo junto 😄";
@@ -162,11 +170,9 @@ async function sendMessage(userInput) {
 
   try {
     const reply = await runLocalModel(HISTORY);
-
     HISTORY.push({ role: "assistant", content: reply });
     saveHistory(HISTORY);
 
-    // poda histórico
     const sysIdx = HISTORY.findIndex(m => m.role === "system");
     const base = sysIdx >= 0 ? [HISTORY[sysIdx]] : [{ role: "system", content: SYSTEM_PROMPT }];
     const rest = HISTORY.filter(m => m.role !== "system");
