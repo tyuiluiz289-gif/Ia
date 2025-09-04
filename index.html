@@ -26,9 +26,10 @@
   <script>
     (function () {
       const SOURCES = [
-        "./web-llm.min.js",
-        "https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.min.js",
-        "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.65/dist/index.min.js"
+        // Se você baixar o arquivo localmente, salve como web-llm.js na mesma pasta:
+        "./web-llm.js",
+        "https://unpkg.com/@mlc-ai/web-llm@0.2.65/dist/index.js",
+        "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.65/dist/index.js"
       ];
       const TIMEOUT_MS = 12000; // 12s por fonte
 
@@ -69,7 +70,6 @@
         document.head.appendChild(s);
       }
 
-      // dispara o carregamento se ainda não existe
       if (!("webllm" in globalThis)) {
         emitStatus("Carregando runtime da IA… primeira inicialização pode demorar.");
         tryLoad(0);
