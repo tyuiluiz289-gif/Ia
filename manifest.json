@@ -1,16 +1,54 @@
 {
-  "name": "AvaGPT (Offline)",
+  "id": "ava-gpt",
+  "name": "AvaGPT",
   "short_name": "AvaGPT",
-  "description": "IA offline, zuera e gentil – roda no navegador e como PWA.",
-  "id": "/Ia/",
-  "start_url": "/Ia/index.html",
-  "scope": "/Ia/",
+  "description": "IA offline, zoeira e gentil — roda no navegador e como PWA.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+
+  "start_url": "./?source=pwa",
+  "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0b1220",
+  "display_override": ["standalone", "window-controls-overlay"],
+  "orientation": "portrait-primary",
+
   "theme_color": "#0b1220",
+  "background_color": "#0b1220",
+
   "icons": [
-    { "src": "/Ia/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/Ia/icon-512.png", "sizes": "512x512", "type": "image/png" }
-  ]
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+
+  "categories": ["productivity", "utilities", "education"],
+
+  "shortcuts": [
+    {
+      "name": "Nova conversa",
+      "short_name": "Novo chat",
+      "description": "Começar uma nova conversa com a Ava",
+      "url": "./?new=1",
+      "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Limpar memória",
+      "short_name": "Zerar memória",
+      "description": "Limpa o histórico da Ava",
+      "url": "./?action=clear",
+      "icons": [{ "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+
+  "screenshots": [
+    /* Coloque 1–2 prints e eu completo:
+    {
+      "src": "./screenshot-1.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+    */
+  ],
+
+  "prefer_related_applications": false
 }
