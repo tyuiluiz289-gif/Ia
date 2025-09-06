@@ -14,8 +14,9 @@ const LOCAL_MODELS_BASE = "./models/";   // ex: ./models/Phi-3-mini-4k-instruct-
 
 // ==== CPU "modo seguro" (opcional) ====
 // Se sua GPU vive quebrando no shader, ligue isto:
-const FORCE_CPU = false;                 // true = força CPU/WASM
+const FORCE_CPU   = false;               // true = força CPU/WASM
 const WASM_THREADS = 2;                  // 1-2 é seguro em mobile
+const SAFE_THREADS = (typeof SharedArrayBuffer !== "undefined") ? WASM_THREADS : 1;
 
 // ===== Persona =====
 const SYSTEM_PROMPT = [
@@ -90,7 +91,7 @@ async function buildEngine(createFn, MODEL_ID, source /* "local"|"cdn" */) {
   // base de opções comum
   const baseOpts = {
     initProgressCallback,
-    ...(FORCE_CPU ? { useGPU: false, preferredDeviceType: "cpu", wasmNumThreads: WASM_THREADS } : {})
+    ...(FORCE_CPU ? { useGPU: false, preferredDeviceType: "cpu", wasmNumThreads: SAFE_THREADS } : {})
   };
 
   // quando "local", passamos uma model_list dizendo de onde ler os shards
@@ -121,6 +122,11 @@ async function ensureModel() {
   if (window.AVA?.engine) return window.AVA;
   window.AVA = { initializing: true, engine: null, modelId: null };
 
+  // “mensagem gentil” se a inicialização demorar
+  const initWatch = setTimeout(() => {
+    status("Ainda compilando/baixando… a primeira vez costuma demorar um pouco 😉");
+  }, 15000);
+
   try {
     const wl = await waitFor(() => globalThis.webllm, 12000);
     const { CreateMLCEngine, CreateWebWorkerMLCEngine } = pickCreateFns(wl);
@@ -138,19 +144,30 @@ async function ensureModel() {
 
       for (const src of sources) {
         try {
-          status(`Abrindo ${MODEL_ID} via ${src.toUpperCase()}…`, 1);
+          status(`Abrindo ${MODEL_ID} (${src.toUpperCase()})…`, 1);
           const engine = await buildEngine(create, MODEL_ID, src);
 
           window.AVA.engine = engine;
           window.AVA.modelId = MODEL_ID;
           window.AVA.initializing = false;
+          clearTimeout(initWatch);
           status(`Modelo ${MODEL_ID} (${src}) pronto! 🚀`, 100);
           return window.AVA;
         } catch (e) {
+          const msg = String(e?.message || e);
+          // dica específica para erro de shader da GPU
+          if (
+            msg.includes("Invalid ShaderModule") ||
+            msg.includes("compute stage") ||
+            msg.includes("entryPoint") ||
+            msg.includes("shader")
+          ) {
+            status("Falha nos shaders da GPU. Ative FORCE_CPU=true (modo seguro) e recarregue. 🔧");
+          } else {
+            status(`Falhou ${MODEL_ID} em ${src}. Tentando próximo…`);
+          }
           console.warn(`[WebLLM] falhou ${MODEL_ID} (${src})`, e);
           lastErr = e;
-          status(`Falhou ${MODEL_ID} em ${src}. Tentando próximo…`);
-          // tenta próxima fonte (cdn/local) ou próximo modelo
         }
       }
     }
@@ -162,6 +179,8 @@ async function ensureModel() {
     window.AVA.engine = null;
     status("Falha ao carregar a IA: " + (err?.message || String(err)));
     return window.AVA;
+  } finally {
+    clearTimeout(initWatch);
   }
 }
 
@@ -238,3 +257,8 @@ async function sendMessage(userInput) {
 
 window.sendMessage  = sendMessage;
 window.prewarmModel = ensureModel;
+
+// Evita worker/zombie ocupando RAM ao fechar a aba/app
+window.addEventListener("beforeunload", () => {
+  try { window.AVA?.engine?.dispose?.(); } catch {}
+});
